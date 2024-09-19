@@ -13,17 +13,55 @@ export function useCustomFetch() {
       params?: TParams
     ): Promise<TData | null> =>
       wrappedRequest<TData>(async () => {
-        const cacheKey = getCacheKey(endpoint, params)
-        const cacheResponse = cache?.current.get(cacheKey)
-
-        if (cacheResponse) {
-          const data = JSON.parse(cacheResponse)
-          return data as Promise<TData>
-        }
-
-        const result = await fakeFetch<TData>(endpoint, params)
-        cache?.current.set(cacheKey, JSON.stringify(result))
-        return result
+        
+        if (params && (params as any).value !== null) {
+          cache?.current.forEach((cacheValue, cacheKey) => {
+              let foundEmployeeId = "";
+              
+              if (cacheKey.startsWith("paginatedTransactions")) {
+                  const parsedCacheValue = JSON.parse(cacheValue);
+      
+                  parsedCacheValue.data.forEach((transaction: any) => {
+                      if (transaction.id === (params as any).transactionId) {
+                          transaction.approved = (params as any).value;
+                          foundEmployeeId = transaction.employee.id;
+                      }
+                  });
+      
+                  cache.current.set(cacheKey, JSON.stringify(parsedCacheValue));
+      
+                  if (foundEmployeeId) {
+                      const employeeCacheKey = `transactionsByEmployee@{"employeeId":"${foundEmployeeId}"}`;
+                      const employeeTransactions = cache.current.get(employeeCacheKey);
+      
+                      if (employeeTransactions) {
+                          const parsedEmployeeTransactions = JSON.parse(employeeTransactions);
+      
+                          parsedEmployeeTransactions.forEach((employeeTransaction: any) => {
+                              if (employeeTransaction.id === (params as any).transactionId) {
+                                  employeeTransaction.approved = (params as any).value;
+                              }
+                          });
+      
+                          cache.current.set(employeeCacheKey, JSON.stringify(parsedEmployeeTransactions));
+                      }
+                  }
+              }
+          });
+      }
+      
+      const generatedCacheKey = getCacheKey(endpoint, params);
+      const existingCacheResponse = cache?.current.get(generatedCacheKey);
+      
+      if (existingCacheResponse) {
+          const parsedData = JSON.parse(existingCacheResponse);
+          return parsedData as Promise<TData>;
+      }
+      
+      const fetchResult = await fakeFetch<TData>(endpoint, params);
+      cache?.current.set(generatedCacheKey, JSON.stringify(fetchResult));
+      return fetchResult;
+      
       }),
     [cache, wrappedRequest]
   )
